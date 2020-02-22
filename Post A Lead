@@ -49,7 +49,7 @@ global  class CreateLeadFromEmail implements Messaging.InboundEmailHandler{
             String subject = 'Lead Record Succesfully Created '+ Datetime.now().day() +'-'+Datetime.now().format('MMM') + ' ' +Datetime.now().year();
         email.setSubject(subject);
         email.setToAddresses(toAddresses);
-        email.setPlainTextBody('A new successfully processed, Please click on the url to open the record--'+System.URL.getSalesforceBaseURL()+'/'+leadrecord.Id);
+        email.setPlainTextBody('A new lead successfully processed, Please click on the url to open the record--'+System.URL.getSalesforceBaseURL()+'/'+leadrecord.Id);
         Messaging.SendEmailResult[] r = Messaging.sendEmail(new Messaging.SingleEmailMessage[]{email});
     }
 }
