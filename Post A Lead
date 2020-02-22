@@ -20,9 +20,9 @@ global  class CreateLeadFromEmail implements Messaging.InboundEmailHandler{
                         attachment.Body = Blob.valueOf(textachment.body);
                         attachment.ParentId = leadrecord.Id;
                         insert attachment;
-                    }
+                    } 
                 }
-                
+               
                 //Save any Binary Attachment
                 if(binarychments!=NULL && !binarychments.isEmpty()){
                     for (Messaging.Inboundemail.BinaryAttachment bAttachment : binarychments) {
