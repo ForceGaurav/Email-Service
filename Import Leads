@@ -1,0 +1,144 @@
+global class ImortLeads implements Messaging.InboundEmailHandler {
+    global Messaging.InboundEmailResult handleInboundEmail(Messaging.InboundEmail email,Messaging.InboundEnvelope envelope) {
+        Messaging.InboundEmailResult result = new Messaging.InboundEmailresult();
+        Messaging.InboundEmail.BinaryAttachment[] binryachments = email.binaryAttachments;
+        String csvbody='';
+        String csvblob=''; 
+        if(binryachments !=null){
+            for(Messaging.InboundEmail.BinaryAttachment btt : binryachments){
+                try {
+                    if(btt.filename.endsWith('.csv') && btt.body!=null){
+                        csvblob = btt.body.toString();
+                        csvbody    = csvblob.trim();
+                    }
+                }
+                catch (Exception e){
+                    System.debug('Error Message-->'+e.getMessage());
+                }
+            }
+        }
+        System.debug('csvbody-->'+csvbody);
+        String subToCompare=System.Label.LeadEmailSubjectName; // Custom Label to store the Email Subject Name
+        if(subToCompare.equalsIgnoreCase(email.subject)) {
+            /*ImportLog__c custom object used to store the file as Attachment and track log*/
+            ImportLog__c log=new ImportLog__c();
+            insert log;
+            Attachment attachment = new Attachment();
+            attachment.Name = 'Import Log.csv';
+            attachment.Body = Blob.valueof(csvbody);
+            attachment.ParentId = log.Id;
+            insert attachment;
+            
+            try {
+                if(csvbody!=NULL && !String.isBlank(csvbody)){
+                     parseCSV(csvbody,log);
+                     sendEmail(log);
+                }
+            }
+            catch (Exception e){
+                System.debug('DmlException-->'+e.getMessage());
+            }
+        }
+        result.success = true;
+        return result;
+    }
+    global void parseCSV(String csvString, ImportLog__c logrecord){
+        try{
+            List<Lead>recordNeedtoBeinsert=new List<Lead>();
+            Map<Integer,String> leadwithColumnMap=new Map<Integer,String>();
+            List<Lead> leadList=new List<Lead>();
+            /*LeadColumnFieldMapping__c used for lead fields and file columns mapping*/
+            List<LeadColumnFieldMapping__c> leadcolmapping = LeadColumnFieldMapping__c.getall().values();
+            Map<String,String> leadcoulumnmap = new Map<String,String>();
+            for(LeadColumnFieldMapping__c ExRMap : leadcolmapping) {
+                leadcoulumnmap.put(ExRMap.Value__c,ExRMap.Name);
+            }
+            Utility_RowIterator r = New Utility_RowIterator(csvString,'\n');
+            String str;
+            List<String> stringList;
+            Integer row=0;
+            While(r.hasNext()){
+                str = r.next(); 
+                stringList=returnNewStringList(str);        
+                if(row ==0){
+                    Integer fileColNo = 0;
+                    for(String strr : stringList) {
+                        if(leadcoulumnmap.containsKey(strr)) {
+                            leadwithColumnMap.put(fileColNo,leadcoulumnmap.get(strr));
+                            fileColNo++;
+                        }
+                    }
+                    System.debug('leadwithColumnMap-->'+leadwithColumnMap);
+                }
+                else{
+                    Lead leaddata = new Lead();
+                    string[] csvRecordData = stringList;
+                    for(Integer stg : leadwithColumnMap.keySet()) {
+                        if(stg != null) {
+                            if(leadwithColumnMap.get(stg)=='lastname'){
+                                leaddata.put(leadwithColumnMap.get(stg),String.valueOf(csvRecordData[stg].trim()));
+                            }
+                            else if(leadwithColumnMap.get(stg)=='Company'){
+                                leaddata.put(leadwithColumnMap.get(stg),String.valueOf(csvRecordData[stg].trim()));
+                            }
+                            else if(leadwithColumnMap.get(stg)=='Phone'){
+                                leaddata.put(leadwithColumnMap.get(stg),String.valueOf(csvRecordData[stg].trim()));
+                            }
+                            else if(leadwithColumnMap.get(stg)=='Email'){
+                                leaddata.put(leadwithColumnMap.get(stg),String.valueOf(csvRecordData[stg].trim()));
+                            }
+                        }
+                    }
+                    recordNeedtoBeinsert.add(leaddata);
+                }
+                row++;
+            }
+            List<Database.SaveResult> newleadList= database.insert(recordNeedtoBeinsert,false);
+            Integer countSuccessResult = 0;
+            Integer countErrorResult  =0;
+            Integer rowNumber =  0;
+            Map<Integer,List<Database.Error>> lisinsertErrorResult = new Map<Integer,List<Database.Error>>();
+            for(Database.SaveResult  dbinsertRes : newleadList) {
+                rowNumber++;
+                if(dbinsertRes.isSuccess()) {
+                    countSuccessResult++;
+                }
+                else {
+                    system.debug(dbinsertRes.getErrors());
+                    countErrorResult++;
+                    lisinsertErrorResult.put(rowNumber+1,dbinsertRes.getErrors());
+                }
+            }
+            String errprmessage='';
+            for(Integer scc:lisinsertErrorResult.keyset()){
+                errprmessage+='Row number-'+scc+'\n'+' Error-'+lisinsertErrorResult.get(scc)+'"\n\n';
+            }
+            logrecord.TotalRecordsIntheFile__c=newleadList.size();
+            logrecord.NumbersOfSucessRecord__c=countSuccessResult;
+            logrecord.No_Of_Failed_Records__c=countErrorResult;
+            logrecord.Error_Message__c=errprmessage;
+            update logrecord;
+        }
+        catch (Exception e){
+            System.debug('DmlException-->'+e.getMessage());
+        }
+    }
+    public static List<string> returnNewStringList(string str){
+        list<string> stringList = new list<string>();       
+        for(String column : str.split(',')){
+            stringList.add(column.trim());
+        }
+        System.debug('stringList-->'+stringList);
+        return stringList;
+    }
+    public void sendEmail(ImportLog__c logrecord){
+        String EmailtoReply=System.label.SendEmailtoSalesTeam;// Sent Email to sales team
+        Messaging.SingleEmailMessage email = new Messaging.SingleEmailMessage();
+        String[] toAddresses = new String[]{EmailtoReply}; 
+            String subject = 'Lead Record Import Log '+ Datetime.now().day() +'-'+Datetime.now().format('MMM') + ' ' +Datetime.now().year();
+        email.setSubject(subject);
+        email.setToAddresses(toAddresses);
+        email.setPlainTextBody('No. Of Record in the file:-'+logrecord.TotalRecordsIntheFile__c+'\n'+'No. of successfully insert records:-'+logrecord.NumbersOfSucessRecord__c+'\n'+'No. of failed records:-'+logrecord.No_Of_Failed_Records__c+'\n'+'Error Messgae:-'+logrecord.Error_Message__c);
+        Messaging.SendEmailResult[] r = Messaging.sendEmail(new Messaging.SingleEmailMessage[]{email});
+    }
+}
